@@ -4,6 +4,7 @@ const GALLERY_BASE = 'https://www.powershellgallery.com/api/v2';
 const ROOT_PACKAGE = 'Microsoft.Graph';
 const HISTORY_LIMIT = 10;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_ROOT_PACKAGE_PAGES = 500;
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -373,17 +374,24 @@ function parseCommandsFromMetadata(metadata) {
 async function getAllRootPackageVersions() {
   const all = [];
   let nextUrl = `${GALLERY_BASE}/FindPackagesById()?id='${ROOT_PACKAGE}'`;
-  let guard = 0;
+  let pageCount = 0;
+  const visitedUrls = new Set();
 
   while (nextUrl) {
-    if (guard >= 50) {
-      throw new Error('PowerShell Gallery pagination exceeded 50 pages while fetching Microsoft.Graph versions.');
+    if (visitedUrls.has(nextUrl)) {
+      throw new Error('PowerShell Gallery pagination loop detected while fetching Microsoft.Graph versions.');
     }
+    visitedUrls.add(nextUrl);
+
+    if (pageCount >= MAX_ROOT_PACKAGE_PAGES) {
+      throw new Error(`PowerShell Gallery pagination exceeded ${MAX_ROOT_PACKAGE_PAGES} pages while fetching Microsoft.Graph versions.`);
+    }
+
     const xml = await fetchText(nextUrl);
     const parsed = parseFeed(xml);
     all.push(...parsed.entries);
     nextUrl = parsed.nextLink;
-    guard += 1;
+    pageCount += 1;
   }
 
   if (all.length === 0) {
