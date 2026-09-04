@@ -13,13 +13,13 @@ Cloudflare Worker site that tracks the longest function/cmdlet name across `Micr
 
 - `https://www.powershellgallery.com/packages/Microsoft.Graph`
 - PowerShell Gallery OData (`/api/v2`) package metadata
-- `Microsoft.Graph` dependencies are used as fallback source when command metadata is not available on the root package entry
+- `Microsoft.Graph*` dependencies are also evaluated per version, and the overall longest command is selected from root + dependency metadata
 
 ## How it works
 
 - Fetches all historical `Microsoft.Graph` versions from PowerShell Gallery
 - Reads command metadata (`Cmdlets` / `Functions`)
-- Falls back to dependency package metadata when needed
+- Compares the longest command from the root package with the longest command from dependency packages
 - Builds a transition timeline when the longest command changes
 - Caches computed data in memory for 6 hours to minimize remote calls
 
@@ -32,6 +32,12 @@ npm run dev
 
 Then open the local Worker URL shown by Wrangler.
 
+To use the protected refresh endpoint:
+
+```bash
+export REFRESH_TOKEN=your-refresh-token
+```
+
 ## Test
 
 ```bash
@@ -42,4 +48,10 @@ npm test
 
 ```bash
 npm run deploy
+```
+
+Set `REFRESH_TOKEN` as a Cloudflare Worker secret for production:
+
+```bash
+npx wrangler secret put REFRESH_TOKEN
 ```

@@ -16,6 +16,8 @@ const memoryCache = {
   data: null,
   expiresAt: 0,
   inFlight: null,
+  inFlightGeneration: null,
+  generation: 0,
 };
 
 const htmlPage = `<!doctype html>
@@ -130,6 +132,13 @@ const htmlPage = `<!doctype html>
     const statusNode = document.getElementById('status');
     const currentNode = document.getElementById('current');
     const historyNode = document.getElementById('history');
+    const esc = (value) =>
+      String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('\"', '&quot;')
+        .replaceAll(\"'\", '&#39;');
 
     const toDate = (value) => {
       if (!value) return 'unknown';
@@ -146,12 +155,18 @@ const htmlPage = `<!doctype html>
 
         statusNode.textContent = 'Generated ' + toDate(data.generatedAt) + ' · Versions analyzed: ' + data.totalVersionsAnalyzed;
 
+        if (!data.current || !data.current.name) {
+          currentNode.innerHTML = '<p class="sub">No longest command could be resolved yet.</p>';
+          historyNode.innerHTML = '<p class="sub">No history available.</p>';
+          return;
+        }
+
         currentNode.innerHTML = [
-          '<div class="metric">' + data.current.name + '</div>',
+          '<div class="metric">' + esc(data.current.name) + '</div>',
           '<div class="sub">Length: ' + data.current.length + ' characters</div>',
-          '<div class="sub">Package: <span class="badge">' + data.current.packageId + '</span></div>',
-          '<div class="sub">Longest since: ' + toDate(data.current.sincePublished) + ' (Microsoft.Graph ' + data.current.sinceVersion + ')</div>',
-          '<div class="sub" style="margin-top:0.4rem;">Previous longest: ' + (data.previous?.name || 'n/a') + '</div>',
+          '<div class="sub">Package: <span class="badge">' + esc(data.current.packageId) + '</span></div>',
+          '<div class="sub">Longest since: ' + esc(toDate(data.current.sincePublished)) + ' (Microsoft.Graph ' + esc(data.current.sinceVersion) + ')</div>',
+          '<div class="sub" style="margin-top:0.4rem;">Previous longest: ' + esc(data.previous?.name || 'n/a') + '</div>',
         ].join('');
 
         if (!data.history.length) {
@@ -161,9 +176,9 @@ const htmlPage = `<!doctype html>
 
         const rows = data.history.map((item) =>
           '<tr>' +
-            '<td>' + toDate(item.publishedAt) + '<br><span class="sub">v' + item.version + '</span></td>' +
-            '<td><strong>' + item.name + '</strong><br><span class="sub">' + item.packageId + '</span></td>' +
-            '<td>' + (item.previousName || 'n/a') + '</td>' +
+            '<th scope="row">' + esc(toDate(item.publishedAt)) + '<br><span class="sub">v' + esc(item.version) + '</span></th>' +
+            '<td><strong>' + esc(item.name) + '</strong><br><span class="sub">' + esc(item.packageId) + '</span></td>' +
+            '<td>' + esc(item.previousName || 'n/a') + '</td>' +
           '</tr>'
         ).join('');
 
@@ -171,9 +186,9 @@ const htmlPage = `<!doctype html>
           '<table>' +
             '<thead>' +
               '<tr>' +
-                '<th>When it changed</th>' +
-                '<th>New longest</th>' +
-                '<th>Previous longest</th>' +
+                '<th scope="col">When it changed</th>' +
+                '<th scope="col">New longest</th>' +
+                '<th scope="col">Previous longest</th>' +
               '</tr>' +
             '</thead>' +
             '<tbody>' + rows + '</tbody>' +
@@ -181,7 +196,7 @@ const htmlPage = `<!doctype html>
       } catch (error) {
         statusNode.classList.add('error');
         statusNode.textContent = 'Unable to load data right now.';
-        currentNode.innerHTML = '<p class="error">' + error.message + '</p>';
+        currentNode.innerHTML = '<p class="error">' + esc(error.message) + '</p>';
       }
     }
 
@@ -269,7 +284,9 @@ function parseDependencyString(raw) {
     .map((entry) => entry.trim())
     .filter(Boolean)
     .map((entry) => {
-      const [id, versionSpec] = entry.split(':');
+      const separator = entry.indexOf(':');
+      const id = separator >= 0 ? entry.slice(0, separator) : entry;
+      const versionSpec = separator >= 0 ? entry.slice(separator + 1) : '';
       return {
         id: id?.trim(),
         version: normalizeVersion(versionSpec?.trim()),
@@ -341,7 +358,7 @@ async function fetchText(url) {
   });
 
   if (!response.ok) {
-    throw new Error(`PowerShell Gallery request failed (${response.status}) for ${url}`);
+    throw new Error(`PowerShell Gallery request failed with status ${response.status}.`);
   }
 
   return response.text();
@@ -379,11 +396,44 @@ async function getPackageMetadata(packageId, version, memo) {
   const key = `${packageId}@${version}`;
   if (memo.has(key)) return memo.get(key);
 
-  const url = `${GALLERY_BASE}/Packages(Id='${encodeURIComponent(packageId)}',Version='${encodeURIComponent(version)}')`;
+  const safePackageId = String(packageId).replaceAll("'", "''");
+  const safeVersion = String(version).replaceAll("'", "''");
+  const url = `${GALLERY_BASE}/Packages(Id='${safePackageId}',Version='${safeVersion}')`;
   const promise = fetchText(url).then(parsePackageProperties);
   memo.set(key, promise);
 
   return promise;
+}
+
+async function resolveWinnerForVersion(root, packageMemo, metadataLoader = getPackageMetadata) {
+  const rootCommands = parseCommandsFromMetadata(root);
+  let longestName = pickLongest(rootCommands);
+  let sourcePackage = root.id || ROOT_PACKAGE;
+
+  const dependencies = parseDependencyString(root.dependencies)
+    .filter((dep) => dep.id.startsWith('Microsoft.Graph'));
+
+  if (dependencies.length > 0) {
+    const dependencyMetadata = await Promise.all(
+      dependencies.map((dep) => metadataLoader(dep.id, dep.version, packageMemo))
+    );
+
+    for (const metadata of dependencyMetadata) {
+      const candidate = pickLongest(parseCommandsFromMetadata(metadata));
+      if (
+        candidate && (
+          !longestName ||
+          candidate.length > longestName.length ||
+          (candidate.length === longestName.length && candidate < longestName)
+        )
+      ) {
+        longestName = candidate;
+        sourcePackage = metadata.id || ROOT_PACKAGE;
+      }
+    }
+  }
+
+  return { longestName, packageId: sourcePackage };
 }
 
 function buildResponse(winnersByVersion) {
@@ -393,7 +443,7 @@ function buildResponse(winnersByVersion) {
   for (const item of winnersByVersion) {
     if (!item.longestName) continue;
 
-    if (!last || last.name !== item.longestName) {
+    if (!last || last.name !== item.longestName || last.packageId !== item.packageId) {
       const transition = {
         version: item.version,
         publishedAt: item.published,
@@ -432,28 +482,13 @@ async function computeLongestCmdletHistory() {
   const winners = [];
 
   for (const root of roots) {
-    const rootCommands = parseCommandsFromMetadata(root);
-    let candidates = rootCommands;
-    let sourcePackage = root.id || ROOT_PACKAGE;
+    const { longestName, packageId } = await resolveWinnerForVersion(root, packageMemo);
 
-    if (candidates.length === 0) {
-      const dependencies = parseDependencyString(root.dependencies)
-        .filter((dep) => dep.id.startsWith('Microsoft.Graph'));
-
-      const dependencyMetadata = await Promise.all(
-        dependencies.map((dep) => getPackageMetadata(dep.id, dep.version, packageMemo))
-      );
-
-      candidates = dependencyMetadata.flatMap(parseCommandsFromMetadata);
-      sourcePackage = ROOT_PACKAGE;
-    }
-
-    const longestName = pickLongest(candidates);
     winners.push({
       version: root.version,
       published: root.published,
       longestName,
-      packageId: sourcePackage,
+      packageId,
     });
   }
 
@@ -467,19 +502,29 @@ async function getCachedData() {
     return memoryCache.data;
   }
 
-  if (!memoryCache.inFlight) {
-    memoryCache.inFlight = computeLongestCmdletHistory()
-      .then((data) => {
-        memoryCache.data = data;
-        memoryCache.expiresAt = now + CACHE_TTL_MS;
-        return data;
-      })
-      .finally(() => {
-        memoryCache.inFlight = null;
-      });
+  if (memoryCache.inFlight && memoryCache.inFlightGeneration === memoryCache.generation) {
+    return memoryCache.inFlight;
   }
 
-  return memoryCache.inFlight;
+  const generation = memoryCache.generation;
+  const inFlightPromise = computeLongestCmdletHistory()
+    .then((data) => {
+      if (generation === memoryCache.generation) {
+        memoryCache.data = data;
+        memoryCache.expiresAt = Date.now() + CACHE_TTL_MS;
+      }
+      return data;
+    })
+    .finally(() => {
+      if (memoryCache.inFlight === inFlightPromise) {
+        memoryCache.inFlight = null;
+        memoryCache.inFlightGeneration = null;
+      }
+    });
+
+  memoryCache.inFlight = inFlightPromise;
+  memoryCache.inFlightGeneration = generation;
+  return inFlightPromise;
 }
 
 function jsonResponse(payload, status = 200) {
@@ -493,18 +538,17 @@ function jsonResponse(payload, status = 200) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/longest') {
       try {
         const data = await getCachedData();
         return jsonResponse(data);
-      } catch (error) {
+      } catch {
         return jsonResponse(
           {
             error: 'Unable to fetch PowerShell Gallery data.',
-            details: error.message,
           },
           500,
         );
@@ -512,8 +556,17 @@ export default {
     }
 
     if (url.pathname === '/api/refresh' && request.method === 'POST') {
+      const configuredToken = env?.REFRESH_TOKEN;
+      const bearerToken = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim();
+      const headerToken = request.headers.get('x-refresh-token')?.trim();
+      const requestToken = headerToken || bearerToken;
+      if (!configuredToken || !requestToken || requestToken !== configuredToken) {
+        return jsonResponse({ error: 'Unauthorized.' }, 401);
+      }
+
       memoryCache.data = null;
       memoryCache.expiresAt = 0;
+      memoryCache.generation += 1;
       return jsonResponse({ ok: true });
     }
 
@@ -532,4 +585,17 @@ export const _internals = {
   pickLongest,
   compareVersions,
   buildResponse,
+  resolveWinnerForVersion,
+  clearCache() {
+    memoryCache.data = null;
+    memoryCache.expiresAt = 0;
+    memoryCache.generation += 1;
+  },
+  setCache(data, expiresAt = Date.now() + CACHE_TTL_MS) {
+    memoryCache.data = data;
+    memoryCache.expiresAt = expiresAt;
+  },
+  getCache() {
+    return { data: memoryCache.data, expiresAt: memoryCache.expiresAt };
+  },
 };

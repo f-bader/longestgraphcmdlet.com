@@ -39,6 +39,75 @@ describe('internal helpers', () => {
     expect(response.previous.name).toBe('Get-MgAlpha');
     expect(response.history).toHaveLength(2);
   });
+
+  it('records transition when package changes for same command', () => {
+    const response = _internals.buildResponse([
+      {
+        version: '1.0.0',
+        published: '2024-01-01T00:00:00Z',
+        longestName: 'Get-MgVeryLongName',
+        packageId: 'Microsoft.Graph.Users',
+      },
+      {
+        version: '1.1.0',
+        published: '2024-02-01T00:00:00Z',
+        longestName: 'Get-MgVeryLongName',
+        packageId: 'Microsoft.Graph.Identity',
+      },
+    ]);
+
+    expect(response.history).toHaveLength(2);
+    expect(response.current.packageId).toBe('Microsoft.Graph.Identity');
+    expect(response.previous.packageId).toBe('Microsoft.Graph.Users');
+  });
+
+  it('selects dependency command when longer than root command', async () => {
+    const root = {
+      id: 'Microsoft.Graph',
+      dependencies: 'Microsoft.Graph.Users:2.0.0',
+      cmdlets: 'Get-MgShort',
+      functions: '',
+    };
+
+    const winner = await _internals.resolveWinnerForVersion(
+      root,
+      new Map(),
+      async () => ({
+        id: 'Microsoft.Graph.Users',
+        cmdlets: 'Get-MgReallyReallyLongCommandName',
+        functions: '',
+      }),
+    );
+
+    expect(winner).toEqual({
+      longestName: 'Get-MgReallyReallyLongCommandName',
+      packageId: 'Microsoft.Graph.Users',
+    });
+  });
+
+  it('uses lexicographic tie-breaker across root and dependency commands', async () => {
+    const root = {
+      id: 'Microsoft.Graph',
+      dependencies: 'Microsoft.Graph.Users:2.0.0',
+      cmdlets: 'Set-MgTieCommand',
+      functions: '',
+    };
+
+    const winner = await _internals.resolveWinnerForVersion(
+      root,
+      new Map(),
+      async () => ({
+        id: 'Microsoft.Graph.Users',
+        cmdlets: 'Get-MgTieCommand',
+        functions: '',
+      }),
+    );
+
+    expect(winner).toEqual({
+      longestName: 'Get-MgTieCommand',
+      packageId: 'Microsoft.Graph.Users',
+    });
+  });
 });
 
 describe('worker endpoints', () => {
@@ -52,10 +121,54 @@ describe('worker endpoints', () => {
   });
 
   it('returns refresh response', async () => {
-    const response = await worker.fetch(new Request('https://example.com/api/refresh', { method: 'POST' }));
+    _internals.setCache({ seeded: true }, Date.now() + 60_000);
+    const response = await worker.fetch(
+      new Request('https://example.com/api/refresh', {
+        method: 'POST',
+        headers: { 'x-refresh-token': 'test-token' },
+      }),
+      { REFRESH_TOKEN: 'test-token' },
+    );
 
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.ok).toBe(true);
+    expect(_internals.getCache()).toEqual({
+      data: null,
+      expiresAt: 0,
+    });
+  });
+
+  it('rejects refresh without token', async () => {
+    const response = await worker.fetch(new Request('https://example.com/api/refresh', { method: 'POST' }));
+    expect(response.status).toBe(401);
+  });
+
+  it('accepts bearer authorization token', async () => {
+    _internals.setCache({ seeded: true }, Date.now() + 60_000);
+    const bearer = ['Bearer', 'test-token'].join(' ');
+    const response = await worker.fetch(
+      new Request('https://example.com/api/refresh', {
+        method: 'POST',
+        headers: { authorization: bearer },
+      }),
+      { REFRESH_TOKEN: 'test-token' },
+    );
+
+    expect(response.status).toBe(200);
+    expect((await response.json()).ok).toBe(true);
+  });
+
+  it('rejects incorrect bearer authorization token', async () => {
+    const bearer = ['Bearer', 'wrong-token'].join(' ');
+    const response = await worker.fetch(
+      new Request('https://example.com/api/refresh', {
+        method: 'POST',
+        headers: { authorization: bearer },
+      }),
+      { REFRESH_TOKEN: 'test-token' },
+    );
+
+    expect(response.status).toBe(401);
   });
 });

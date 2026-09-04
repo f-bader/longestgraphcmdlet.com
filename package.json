@@ -5,8 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "vitest run",
-    "dev": "wrangler dev src/worker.js",
-    "deploy": "wrangler deploy src/worker.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
     "test:watch": "vitest"
   },
   "repository": {
