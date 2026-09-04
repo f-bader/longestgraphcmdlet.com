@@ -7,6 +7,14 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_ROOT_PACKAGE_PAGES = 500;
 const MAX_DEPENDENCY_METADATA_FETCHES = 35;
 
+class PowerShellGalleryError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'PowerShellGalleryError';
+    this.recoverable = true;
+  }
+}
+
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
@@ -321,12 +329,12 @@ function parsePackageProperties(xmlText) {
   try {
     document = parser.parse(xmlText);
   } catch {
-    throw new Error('PowerShell Gallery response parsing failed while reading package metadata.');
+    throw new PowerShellGalleryError('PowerShell Gallery response parsing failed while reading package metadata.');
   }
 
   const properties = extractProperties(document);
   if (!properties) {
-    throw new Error('PowerShell Gallery response parsing failed while reading package metadata.');
+    throw new PowerShellGalleryError('PowerShell Gallery response parsing failed while reading package metadata.');
   }
 
   return {
@@ -344,7 +352,7 @@ function parseFeed(xmlText) {
   try {
     document = parser.parse(xmlText);
   } catch {
-    throw new Error('PowerShell Gallery response parsing failed while reading version feed.');
+    throw new PowerShellGalleryError('PowerShell Gallery response parsing failed while reading version feed.');
   }
 
   const entries = asArray(document.feed?.entry).map((entry) => {
@@ -373,18 +381,18 @@ async function fetchText(url) {
       headers: { accept: 'application/atom+xml,application/xml,text/xml' },
     });
   } catch (error) {
-    throw new Error(`PowerShell Gallery request failed: ${error?.message || 'unknown fetch error'}`);
+    throw new PowerShellGalleryError(`PowerShell Gallery request failed: ${error?.message || 'unknown fetch error'}`);
   }
 
   if (!response.ok) {
-    throw new Error(`PowerShell Gallery request failed with status ${response.status}.`);
+    throw new PowerShellGalleryError(`PowerShell Gallery request failed with status ${response.status}.`);
   }
 
   return response.text();
 }
 
 function isRecoverableRefreshError(error) {
-  return error instanceof Error && error.message.startsWith('PowerShell Gallery');
+  return error instanceof PowerShellGalleryError || error?.recoverable === true;
 }
 
 function parseCommandsFromMetadata(metadata) {
@@ -401,12 +409,12 @@ async function getAllRootPackageVersions() {
 
   while (nextUrl) {
     if (visitedUrls.has(nextUrl)) {
-      throw new Error('PowerShell Gallery pagination loop detected while fetching Microsoft.Graph versions.');
+      throw new PowerShellGalleryError('PowerShell Gallery pagination loop detected while fetching Microsoft.Graph versions.');
     }
     visitedUrls.add(nextUrl);
 
     if (pageCount >= MAX_ROOT_PACKAGE_PAGES) {
-      throw new Error(`PowerShell Gallery pagination exceeded ${MAX_ROOT_PACKAGE_PAGES} pages while fetching Microsoft.Graph versions.`);
+      throw new PowerShellGalleryError(`PowerShell Gallery pagination exceeded ${MAX_ROOT_PACKAGE_PAGES} pages while fetching Microsoft.Graph versions.`);
     }
 
     const xml = await fetchText(nextUrl);
@@ -417,7 +425,7 @@ async function getAllRootPackageVersions() {
   }
 
   if (all.length === 0) {
-    throw new Error('No Microsoft.Graph package versions were returned from PowerShell Gallery.');
+    throw new PowerShellGalleryError('No Microsoft.Graph package versions were returned from PowerShell Gallery.');
   }
 
   return all
@@ -477,7 +485,15 @@ async function resolveWinnerForVersion(
     const dependencyMetadata = await Promise.all(
       dependencies
         .filter((dep) => shouldLoadDependencyMetadata(dep, packageMemo, dependencyFetchBudget))
-        .map((dep) => metadataLoader(dep.id, dep.version, packageMemo).catch(() => null))
+        .map((dep) =>
+          metadataLoader(dep.id, dep.version, packageMemo).catch((error) => {
+            if (isRecoverableRefreshError(error)) {
+              return null;
+            }
+
+            throw error;
+          })
+        )
     );
 
     for (const metadata of dependencyMetadata) {

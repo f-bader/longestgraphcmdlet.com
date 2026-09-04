@@ -109,7 +109,7 @@ describe('internal helpers', () => {
     });
   });
 
-  it('keeps root winner when dependency metadata fetch fails', async () => {
+  it('keeps root winner when recoverable dependency metadata fetch fails', async () => {
     const root = {
       id: 'Microsoft.Graph',
       dependencies: 'Microsoft.Graph.Users:2.0.0',
@@ -121,7 +121,9 @@ describe('internal helpers', () => {
       root,
       new Map(),
       async () => {
-        throw new Error('fetch failed');
+        const error = new Error('fetch failed');
+        error.recoverable = true;
+        throw error;
       },
     );
 
@@ -129,6 +131,25 @@ describe('internal helpers', () => {
       longestName: 'Get-MgLongestRootCommandName',
       packageId: 'Microsoft.Graph',
     });
+  });
+
+  it('rethrows non-recoverable dependency metadata errors', async () => {
+    const root = {
+      id: 'Microsoft.Graph',
+      dependencies: 'Microsoft.Graph.Users:2.0.0',
+      cmdlets: 'Get-MgRootCommandName',
+      functions: '',
+    };
+
+    await expect(
+      _internals.resolveWinnerForVersion(
+        root,
+        new Map(),
+        async () => {
+          throw new Error('unexpected failure');
+        },
+      ),
+    ).rejects.toThrow('unexpected failure');
   });
 
   it('skips uncached dependencies when fetch budget is exhausted', async () => {
