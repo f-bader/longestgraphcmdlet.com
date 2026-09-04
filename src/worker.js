@@ -5,6 +5,7 @@ const ROOT_PACKAGE = 'Microsoft.Graph';
 const HISTORY_LIMIT = 10;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_ROOT_PACKAGE_PAGES = 500;
+const MAX_DEPENDENCY_METADATA_FETCHES = 35;
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -416,20 +417,51 @@ async function getPackageMetadata(packageId, version, memo) {
   return promise;
 }
 
-async function resolveWinnerForVersion(root, packageMemo, metadataLoader = getPackageMetadata) {
+function packageMemoKey(packageId, version) {
+  return `${packageId}@${version}`;
+}
+
+function shouldLoadDependencyMetadata(dep, packageMemo, dependencyFetchBudget) {
+  if (packageMemo.has(packageMemoKey(dep.id, dep.version))) {
+    return true;
+  }
+
+  if (!dependencyFetchBudget) {
+    return true;
+  }
+
+  if (dependencyFetchBudget.remaining <= 0) {
+    return false;
+  }
+
+  dependencyFetchBudget.remaining -= 1;
+  return true;
+}
+
+async function resolveWinnerForVersion(
+  root,
+  packageMemo,
+  metadataLoader = getPackageMetadata,
+  options = {},
+) {
   const rootCommands = parseCommandsFromMetadata(root);
   let longestName = pickLongest(rootCommands);
   let sourcePackage = root.id || ROOT_PACKAGE;
+  const dependencyFetchBudget = options.dependencyFetchBudget;
 
   const dependencies = parseDependencyString(root.dependencies)
     .filter((dep) => dep.id.startsWith('Microsoft.Graph'));
 
   if (dependencies.length > 0) {
     const dependencyMetadata = await Promise.all(
-      dependencies.map((dep) => metadataLoader(dep.id, dep.version, packageMemo))
+      dependencies
+        .filter((dep) => shouldLoadDependencyMetadata(dep, packageMemo, dependencyFetchBudget))
+        .map((dep) => metadataLoader(dep.id, dep.version, packageMemo).catch(() => null))
     );
 
     for (const metadata of dependencyMetadata) {
+      if (!metadata) continue;
+
       const candidate = pickLongest(parseCommandsFromMetadata(metadata));
       if (
         candidate && (
@@ -490,10 +522,16 @@ function buildResponse(winnersByVersion) {
 async function computeLongestCmdletHistory() {
   const roots = await getAllRootPackageVersions();
   const packageMemo = new Map();
+  const dependencyFetchBudget = { remaining: MAX_DEPENDENCY_METADATA_FETCHES };
   const winners = [];
 
   for (const root of roots) {
-    const { longestName, packageId } = await resolveWinnerForVersion(root, packageMemo);
+    const { longestName, packageId } = await resolveWinnerForVersion(
+      root,
+      packageMemo,
+      getPackageMetadata,
+      { dependencyFetchBudget },
+    );
 
     winners.push({
       version: root.version,
@@ -518,6 +556,7 @@ async function getCachedData() {
   }
 
   const generation = memoryCache.generation;
+  const staleData = memoryCache.data;
   const inFlightPromise = computeLongestCmdletHistory()
     .then((data) => {
       if (generation === memoryCache.generation) {
@@ -525,6 +564,13 @@ async function getCachedData() {
         memoryCache.expiresAt = Date.now() + CACHE_TTL_MS;
       }
       return data;
+    })
+    .catch((error) => {
+      if (staleData) {
+        return staleData;
+      }
+
+      throw error;
     })
     .finally(() => {
       if (memoryCache.inFlight === inFlightPromise) {

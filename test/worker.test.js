@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import worker, { _internals } from '../src/worker.js';
 
 describe('internal helpers', () => {
@@ -105,6 +105,69 @@ describe('internal helpers', () => {
 
     expect(winner).toEqual({
       longestName: 'Get-MgTieCommand',
+      packageId: 'Microsoft.Graph.Users',
+    });
+  });
+
+  it('keeps root winner when dependency metadata fetch fails', async () => {
+    const root = {
+      id: 'Microsoft.Graph',
+      dependencies: 'Microsoft.Graph.Users:2.0.0',
+      cmdlets: 'Get-MgLongestRootCommandName',
+      functions: '',
+    };
+
+    const winner = await _internals.resolveWinnerForVersion(
+      root,
+      new Map(),
+      async () => {
+        throw new Error('fetch failed');
+      },
+    );
+
+    expect(winner).toEqual({
+      longestName: 'Get-MgLongestRootCommandName',
+      packageId: 'Microsoft.Graph',
+    });
+  });
+
+  it('skips uncached dependencies when fetch budget is exhausted', async () => {
+    const root = {
+      id: 'Microsoft.Graph',
+      dependencies: 'Microsoft.Graph.Users:2.0.0|Microsoft.Graph.Identity:2.0.0',
+      cmdlets: 'Get-MgRootCommandName',
+      functions: '',
+    };
+    const packageMemo = new Map([
+      [
+        'Microsoft.Graph.Users@2.0.0',
+        Promise.resolve({
+          id: 'Microsoft.Graph.Users',
+          cmdlets: 'Get-MgLongerCachedDependencyCommand',
+          functions: '',
+        }),
+      ],
+    ]);
+    const metadataLoader = vi.fn(async (packageId, version, memo) => {
+      const cached = memo.get(`${packageId}@${version}`);
+      if (cached) return cached;
+      return {
+        id: packageId,
+        cmdlets: 'Get-MgVeryVeryLongUncachedDependencyCommand',
+        functions: '',
+      };
+    });
+
+    const winner = await _internals.resolveWinnerForVersion(
+      root,
+      packageMemo,
+      metadataLoader,
+      { dependencyFetchBudget: { remaining: 0 } },
+    );
+
+    expect(metadataLoader).toHaveBeenCalledTimes(1);
+    expect(winner).toEqual({
+      longestName: 'Get-MgLongerCachedDependencyCommand',
       packageId: 'Microsoft.Graph.Users',
     });
   });
