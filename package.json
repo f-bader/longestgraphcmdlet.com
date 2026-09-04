@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "dev": "wrangler dev src/worker.js",
+    "deploy": "wrangler deploy src/worker.js",
+    "test:watch": "vitest"
   },
   "repository": {
     "type": "git",
@@ -12,5 +15,13 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "fast-xml-parser": "^5.11.1"
+  },
+  "devDependencies": {
+    "vitest": "^5.0.0",
+    "wrangler": "^4.129.0"
+  },
+  "type": "module"
 }
