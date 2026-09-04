@@ -138,7 +138,7 @@ const htmlPage = `<!doctype html>
         .replaceAll('<', '&lt;')
         .replaceAll('>', '&gt;')
         .replaceAll('\"', '&quot;')
-        .replaceAll(\"'\", '&#39;');
+        .replaceAll("'", '&#39;');
 
     const toDate = (value) => {
       if (!value) return 'unknown';
@@ -375,7 +375,10 @@ async function getAllRootPackageVersions() {
   let nextUrl = `${GALLERY_BASE}/FindPackagesById()?id='${ROOT_PACKAGE}'`;
   let guard = 0;
 
-  while (nextUrl && guard < 50) {
+  while (nextUrl) {
+    if (guard >= 50) {
+      throw new Error('PowerShell Gallery pagination exceeded 50 pages while fetching Microsoft.Graph versions.');
+    }
     const xml = await fetchText(nextUrl);
     const parsed = parseFeed(xml);
     all.push(...parsed.entries);
@@ -527,12 +530,12 @@ async function getCachedData() {
   return inFlightPromise;
 }
 
-function jsonResponse(payload, status = 200) {
+function jsonResponse(payload, status = 200, cacheControl = 'public, max-age=300') {
   return new Response(JSON.stringify(payload, null, 2), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'public, max-age=300',
+      'cache-control': cacheControl,
     },
   });
 }
@@ -561,13 +564,13 @@ export default {
       const headerToken = request.headers.get('x-refresh-token')?.trim();
       const requestToken = headerToken || bearerToken;
       if (!configuredToken || !requestToken || requestToken !== configuredToken) {
-        return jsonResponse({ error: 'Unauthorized.' }, 401);
+        return jsonResponse({ error: 'Unauthorized.' }, 401, 'private, no-store');
       }
 
       memoryCache.data = null;
       memoryCache.expiresAt = 0;
       memoryCache.generation += 1;
-      return jsonResponse({ ok: true });
+      return jsonResponse({ ok: true }, 200, 'private, no-store');
     }
 
     return new Response(htmlPage, {
