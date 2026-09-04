@@ -3,7 +3,7 @@ import { XMLParser } from 'fast-xml-parser';
 const GALLERY_BASE = 'https://www.powershellgallery.com/api/v2';
 const ROOT_PACKAGE = 'Microsoft.Graph';
 const HISTORY_LIMIT = 10;
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 const parser = new XMLParser({
   ignoreAttributes: false,

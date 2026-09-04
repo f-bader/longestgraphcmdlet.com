@@ -21,7 +21,7 @@ Cloudflare Worker site that tracks the longest function/cmdlet name across `Micr
 - Reads command metadata (`Cmdlets` / `Functions`)
 - Compares the longest command from the root package with the longest command from dependency packages
 - Builds a transition timeline when the longest command changes
-- Caches computed data in memory for 6 hours to minimize remote calls
+- Caches computed data in memory for 24 hours (daily refresh cadence) to minimize remote calls
 
 ## Local development
 
