@@ -566,7 +566,7 @@ async function getCachedData() {
       return data;
     })
     .catch((error) => {
-      if (staleData) {
+      if (staleData !== null) {
         return staleData;
       }
 
