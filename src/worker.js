@@ -317,10 +317,16 @@ function extractProperties(document) {
 }
 
 function parsePackageProperties(xmlText) {
-  const document = parser.parse(xmlText);
+  let document;
+  try {
+    document = parser.parse(xmlText);
+  } catch {
+    throw new Error('PowerShell Gallery response parsing failed while reading package metadata.');
+  }
+
   const properties = extractProperties(document);
   if (!properties) {
-    throw new Error('Unable to read package metadata properties.');
+    throw new Error('PowerShell Gallery response parsing failed while reading package metadata.');
   }
 
   return {
@@ -334,7 +340,13 @@ function parsePackageProperties(xmlText) {
 }
 
 function parseFeed(xmlText) {
-  const document = parser.parse(xmlText);
+  let document;
+  try {
+    document = parser.parse(xmlText);
+  } catch {
+    throw new Error('PowerShell Gallery response parsing failed while reading version feed.');
+  }
+
   const entries = asArray(document.feed?.entry).map((entry) => {
     const properties = pickKey(entry.content, 'properties') || pickKey(entry, 'properties') || {};
 
@@ -355,15 +367,24 @@ function parseFeed(xmlText) {
 }
 
 async function fetchText(url) {
-  const response = await fetch(url, {
-    headers: { accept: 'application/atom+xml,application/xml,text/xml' },
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { accept: 'application/atom+xml,application/xml,text/xml' },
+    });
+  } catch (error) {
+    throw new Error(`PowerShell Gallery request failed: ${error?.message || 'unknown fetch error'}`);
+  }
 
   if (!response.ok) {
     throw new Error(`PowerShell Gallery request failed with status ${response.status}.`);
   }
 
   return response.text();
+}
+
+function isRecoverableRefreshError(error) {
+  return error instanceof Error && error.message.startsWith('PowerShell Gallery');
 }
 
 function parseCommandsFromMetadata(metadata) {
@@ -566,7 +587,7 @@ async function getCachedData() {
       return data;
     })
     .catch((error) => {
-      if (staleData !== null) {
+      if (staleData !== null && isRecoverableRefreshError(error)) {
         return staleData;
       }
 
