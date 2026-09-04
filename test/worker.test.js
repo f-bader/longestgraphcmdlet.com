@@ -121,9 +121,7 @@ describe('internal helpers', () => {
       root,
       new Map(),
       async () => {
-        const error = new Error('fetch failed');
-        error.recoverable = true;
-        throw error;
+        throw new _internals.PowerShellGalleryError('fetch failed');
       },
     );
 

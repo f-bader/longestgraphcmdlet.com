@@ -392,7 +392,7 @@ async function fetchText(url) {
 }
 
 function isRecoverableRefreshError(error) {
-  return error instanceof PowerShellGalleryError || error?.recoverable === true;
+  return error instanceof PowerShellGalleryError;
 }
 
 function parseCommandsFromMetadata(metadata) {
@@ -593,7 +593,6 @@ async function getCachedData() {
   }
 
   const generation = memoryCache.generation;
-  const staleData = memoryCache.data;
   const inFlightPromise = computeLongestCmdletHistory()
     .then((data) => {
       if (generation === memoryCache.generation) {
@@ -601,13 +600,6 @@ async function getCachedData() {
         memoryCache.expiresAt = Date.now() + CACHE_TTL_MS;
       }
       return data;
-    })
-    .catch((error) => {
-      if (staleData !== null && isRecoverableRefreshError(error)) {
-        return staleData;
-      }
-
-      throw error;
     })
     .finally(() => {
       if (memoryCache.inFlight === inFlightPromise) {
@@ -674,6 +666,7 @@ export default {
 };
 
 export const _internals = {
+  PowerShellGalleryError,
   parseDependencyString,
   parseCommandsFromMetadata,
   pickLongest,
