@@ -121,7 +121,7 @@ describe('internal helpers', () => {
       root,
       new Map(),
       async () => {
-        throw new _internals.PowerShellGalleryError('fetch failed');
+        throw new _internals.PowerShellGalleryError('fetch failed', 'UPSTREAM_REQUEST_FAILED');
       },
     );
 

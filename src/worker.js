@@ -8,10 +8,10 @@ const MAX_ROOT_PACKAGE_PAGES = 500;
 const MAX_DEPENDENCY_METADATA_FETCHES = 35;
 
 class PowerShellGalleryError extends Error {
-  constructor(message) {
+  constructor(message, code) {
     super(message);
     this.name = 'PowerShellGalleryError';
-    this.recoverable = true;
+    this.code = code;
   }
 }
 
@@ -329,12 +329,18 @@ function parsePackageProperties(xmlText) {
   try {
     document = parser.parse(xmlText);
   } catch {
-    throw new PowerShellGalleryError('PowerShell Gallery response parsing failed while reading package metadata.');
+    throw new PowerShellGalleryError(
+      'PowerShell Gallery response parsing failed while reading package metadata.',
+      'PACKAGE_METADATA_PARSE_FAILED',
+    );
   }
 
   const properties = extractProperties(document);
   if (!properties) {
-    throw new PowerShellGalleryError('PowerShell Gallery response parsing failed while reading package metadata.');
+    throw new PowerShellGalleryError(
+      'PowerShell Gallery response parsing failed while reading package metadata.',
+      'PACKAGE_METADATA_PARSE_FAILED',
+    );
   }
 
   return {
@@ -352,7 +358,10 @@ function parseFeed(xmlText) {
   try {
     document = parser.parse(xmlText);
   } catch {
-    throw new PowerShellGalleryError('PowerShell Gallery response parsing failed while reading version feed.');
+    throw new PowerShellGalleryError(
+      'PowerShell Gallery response parsing failed while reading version feed.',
+      'VERSION_FEED_PARSE_FAILED',
+    );
   }
 
   const entries = asArray(document.feed?.entry).map((entry) => {
@@ -381,18 +390,27 @@ async function fetchText(url) {
       headers: { accept: 'application/atom+xml,application/xml,text/xml' },
     });
   } catch (error) {
-    throw new PowerShellGalleryError(`PowerShell Gallery request failed: ${error?.message || 'unknown fetch error'}`);
+    throw new PowerShellGalleryError(
+      `PowerShell Gallery request failed: ${error?.message || 'unknown fetch error'}`,
+      'UPSTREAM_REQUEST_FAILED',
+    );
   }
 
   if (!response.ok) {
-    throw new PowerShellGalleryError(`PowerShell Gallery request failed with status ${response.status}.`);
+    throw new PowerShellGalleryError(
+      `PowerShell Gallery request failed with status ${response.status}.`,
+      'UPSTREAM_REQUEST_FAILED',
+    );
   }
 
   return response.text();
 }
 
-function isRecoverableRefreshError(error) {
-  return error instanceof PowerShellGalleryError;
+function isRecoverableDependencyError(error) {
+  return (
+    error instanceof PowerShellGalleryError &&
+    (error.code === 'UPSTREAM_REQUEST_FAILED' || error.code === 'PACKAGE_METADATA_PARSE_FAILED')
+  );
 }
 
 function parseCommandsFromMetadata(metadata) {
@@ -409,12 +427,18 @@ async function getAllRootPackageVersions() {
 
   while (nextUrl) {
     if (visitedUrls.has(nextUrl)) {
-      throw new PowerShellGalleryError('PowerShell Gallery pagination loop detected while fetching Microsoft.Graph versions.');
+      throw new PowerShellGalleryError(
+        'PowerShell Gallery pagination loop detected while fetching Microsoft.Graph versions.',
+        'ROOT_PAGINATION_LOOP',
+      );
     }
     visitedUrls.add(nextUrl);
 
     if (pageCount >= MAX_ROOT_PACKAGE_PAGES) {
-      throw new PowerShellGalleryError(`PowerShell Gallery pagination exceeded ${MAX_ROOT_PACKAGE_PAGES} pages while fetching Microsoft.Graph versions.`);
+      throw new PowerShellGalleryError(
+        `PowerShell Gallery pagination exceeded ${MAX_ROOT_PACKAGE_PAGES} pages while fetching Microsoft.Graph versions.`,
+        'ROOT_PAGINATION_LIMIT_EXCEEDED',
+      );
     }
 
     const xml = await fetchText(nextUrl);
@@ -425,7 +449,10 @@ async function getAllRootPackageVersions() {
   }
 
   if (all.length === 0) {
-    throw new PowerShellGalleryError('No Microsoft.Graph package versions were returned from PowerShell Gallery.');
+    throw new PowerShellGalleryError(
+      'No Microsoft.Graph package versions were returned from PowerShell Gallery.',
+      'ROOT_VERSIONS_EMPTY',
+    );
   }
 
   return all
@@ -487,7 +514,7 @@ async function resolveWinnerForVersion(
         .filter((dep) => shouldLoadDependencyMetadata(dep, packageMemo, dependencyFetchBudget))
         .map((dep) =>
           metadataLoader(dep.id, dep.version, packageMemo).catch((error) => {
-            if (isRecoverableRefreshError(error)) {
+            if (isRecoverableDependencyError(error)) {
               return null;
             }
 
