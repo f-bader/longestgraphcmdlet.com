@@ -5,6 +5,15 @@ const ROOT_PACKAGE = 'Microsoft.Graph';
 const HISTORY_LIMIT = 10;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_ROOT_PACKAGE_PAGES = 500;
+const MAX_DEPENDENCY_METADATA_FETCHES = 35;
+
+class PowerShellGalleryError extends Error {
+  constructor(message, code) {
+    super(message);
+    this.name = 'PowerShellGalleryError';
+    this.code = code;
+  }
+}
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -316,10 +325,22 @@ function extractProperties(document) {
 }
 
 function parsePackageProperties(xmlText) {
-  const document = parser.parse(xmlText);
+  let document;
+  try {
+    document = parser.parse(xmlText);
+  } catch {
+    throw new PowerShellGalleryError(
+      'PowerShell Gallery response parsing failed while reading package metadata.',
+      'PACKAGE_METADATA_PARSE_FAILED',
+    );
+  }
+
   const properties = extractProperties(document);
   if (!properties) {
-    throw new Error('Unable to read package metadata properties.');
+    throw new PowerShellGalleryError(
+      'PowerShell Gallery response parsing failed while reading package metadata.',
+      'PACKAGE_METADATA_PARSE_FAILED',
+    );
   }
 
   return {
@@ -333,7 +354,16 @@ function parsePackageProperties(xmlText) {
 }
 
 function parseFeed(xmlText) {
-  const document = parser.parse(xmlText);
+  let document;
+  try {
+    document = parser.parse(xmlText);
+  } catch {
+    throw new PowerShellGalleryError(
+      'PowerShell Gallery response parsing failed while reading version feed.',
+      'VERSION_FEED_PARSE_FAILED',
+    );
+  }
+
   const entries = asArray(document.feed?.entry).map((entry) => {
     const properties = pickKey(entry.content, 'properties') || pickKey(entry, 'properties') || {};
 
@@ -354,15 +384,33 @@ function parseFeed(xmlText) {
 }
 
 async function fetchText(url) {
-  const response = await fetch(url, {
-    headers: { accept: 'application/atom+xml,application/xml,text/xml' },
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { accept: 'application/atom+xml,application/xml,text/xml' },
+    });
+  } catch (error) {
+    throw new PowerShellGalleryError(
+      `PowerShell Gallery request failed: ${error?.message || 'unknown fetch error'}`,
+      'UPSTREAM_REQUEST_FAILED',
+    );
+  }
 
   if (!response.ok) {
-    throw new Error(`PowerShell Gallery request failed with status ${response.status}.`);
+    throw new PowerShellGalleryError(
+      `PowerShell Gallery request failed with status ${response.status}.`,
+      'UPSTREAM_REQUEST_FAILED',
+    );
   }
 
   return response.text();
+}
+
+function isRecoverableDependencyError(error) {
+  return (
+    error instanceof PowerShellGalleryError &&
+    (error.code === 'UPSTREAM_REQUEST_FAILED' || error.code === 'PACKAGE_METADATA_PARSE_FAILED')
+  );
 }
 
 function parseCommandsFromMetadata(metadata) {
@@ -379,12 +427,18 @@ async function getAllRootPackageVersions() {
 
   while (nextUrl) {
     if (visitedUrls.has(nextUrl)) {
-      throw new Error('PowerShell Gallery pagination loop detected while fetching Microsoft.Graph versions.');
+      throw new PowerShellGalleryError(
+        'PowerShell Gallery pagination loop detected while fetching Microsoft.Graph versions.',
+        'ROOT_PAGINATION_LOOP',
+      );
     }
     visitedUrls.add(nextUrl);
 
     if (pageCount >= MAX_ROOT_PACKAGE_PAGES) {
-      throw new Error(`PowerShell Gallery pagination exceeded ${MAX_ROOT_PACKAGE_PAGES} pages while fetching Microsoft.Graph versions.`);
+      throw new PowerShellGalleryError(
+        `PowerShell Gallery pagination exceeded ${MAX_ROOT_PACKAGE_PAGES} pages while fetching Microsoft.Graph versions.`,
+        'ROOT_PAGINATION_LIMIT_EXCEEDED',
+      );
     }
 
     const xml = await fetchText(nextUrl);
@@ -395,7 +449,10 @@ async function getAllRootPackageVersions() {
   }
 
   if (all.length === 0) {
-    throw new Error('No Microsoft.Graph package versions were returned from PowerShell Gallery.');
+    throw new PowerShellGalleryError(
+      'No Microsoft.Graph package versions were returned from PowerShell Gallery.',
+      'ROOT_VERSIONS_EMPTY',
+    );
   }
 
   return all
@@ -416,20 +473,59 @@ async function getPackageMetadata(packageId, version, memo) {
   return promise;
 }
 
-async function resolveWinnerForVersion(root, packageMemo, metadataLoader = getPackageMetadata) {
+function packageMemoKey(packageId, version) {
+  return `${packageId}@${version}`;
+}
+
+function shouldLoadDependencyMetadata(dep, packageMemo, dependencyFetchBudget) {
+  if (packageMemo.has(packageMemoKey(dep.id, dep.version))) {
+    return true;
+  }
+
+  if (!dependencyFetchBudget) {
+    return true;
+  }
+
+  if (dependencyFetchBudget.remaining <= 0) {
+    return false;
+  }
+
+  dependencyFetchBudget.remaining -= 1;
+  return true;
+}
+
+async function resolveWinnerForVersion(
+  root,
+  packageMemo,
+  metadataLoader = getPackageMetadata,
+  options = {},
+) {
   const rootCommands = parseCommandsFromMetadata(root);
   let longestName = pickLongest(rootCommands);
   let sourcePackage = root.id || ROOT_PACKAGE;
+  const dependencyFetchBudget = options.dependencyFetchBudget;
 
   const dependencies = parseDependencyString(root.dependencies)
     .filter((dep) => dep.id.startsWith('Microsoft.Graph'));
 
   if (dependencies.length > 0) {
     const dependencyMetadata = await Promise.all(
-      dependencies.map((dep) => metadataLoader(dep.id, dep.version, packageMemo))
+      dependencies
+        .filter((dep) => shouldLoadDependencyMetadata(dep, packageMemo, dependencyFetchBudget))
+        .map((dep) =>
+          metadataLoader(dep.id, dep.version, packageMemo).catch((error) => {
+            if (isRecoverableDependencyError(error)) {
+              return null;
+            }
+
+            throw error;
+          })
+        )
     );
 
     for (const metadata of dependencyMetadata) {
+      if (!metadata) continue;
+
       const candidate = pickLongest(parseCommandsFromMetadata(metadata));
       if (
         candidate && (
@@ -490,10 +586,16 @@ function buildResponse(winnersByVersion) {
 async function computeLongestCmdletHistory() {
   const roots = await getAllRootPackageVersions();
   const packageMemo = new Map();
+  const dependencyFetchBudget = { remaining: MAX_DEPENDENCY_METADATA_FETCHES };
   const winners = [];
 
   for (const root of roots) {
-    const { longestName, packageId } = await resolveWinnerForVersion(root, packageMemo);
+    const { longestName, packageId } = await resolveWinnerForVersion(
+      root,
+      packageMemo,
+      getPackageMetadata,
+      { dependencyFetchBudget },
+    );
 
     winners.push({
       version: root.version,
@@ -591,6 +693,7 @@ export default {
 };
 
 export const _internals = {
+  PowerShellGalleryError,
   parseDependencyString,
   parseCommandsFromMetadata,
   pickLongest,
