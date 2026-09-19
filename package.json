@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "vitest run",
+    "collect": "node scripts/collect-data.js",
+    "check": "npm test && npx wrangler deploy --dry-run",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "test:watch": "vitest"
@@ -16,12 +18,10 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "fast-xml-parser": "^5.11.1"
-  },
   "devDependencies": {
+    "fast-xml-parser": "^5.11.1",
     "vitest": "^5.0.0",
-    "wrangler": "^4.129.0"
+    "wrangler": "^4.131.0"
   },
   "type": "module"
 }

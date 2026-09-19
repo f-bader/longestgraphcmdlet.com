@@ -1,57 +1,46 @@
 # longestgraphcmdlet.com
 
-Cloudflare Worker site that tracks the longest function/cmdlet name across `Microsoft.Graph` PowerShell module metadata and historical package versions from PowerShell Gallery.
+Cloudflare Worker site that shows the longest Microsoft Graph PowerShell function/cmdlet and its recent history.
 
-## What it shows
+## Architecture
 
-- Current longest cmdlet/function name
-- Since which `Microsoft.Graph` version/date it has been the longest
-- Previous longest cmdlet
-- Last 10 longest-name transitions
+Visitors are served a generated data snapshot. The Worker never calls PowerShell Gallery, so Gallery timeouts, rate limits, and Cloudflare Worker subrequest limits cannot turn a page visit into a 500 response.
 
-## Data source
+A GitHub Actions publishing workflow collects every historical `Microsoft.Graph` release and its `Microsoft.Graph*` dependency metadata, validates the complete result, then deploys the Worker. It runs after pushes to `main`, daily at 03:17 UTC, and on manual dispatch. A failed collection leaves the previous Worker version running.
 
-- `https://www.powershellgallery.com/packages/Microsoft.Graph`
-- PowerShell Gallery OData (`/api/v2`) package metadata
-- `Microsoft.Graph*` dependencies are also evaluated per version, and the overall longest command is selected from root + dependency metadata
+For dependencies with an unbounded version range, the collector selects the newest matching package published no later than the root package release. Bounded ranges are resolved the same way, so historical results do not use dependency packages published later.
 
-## How it works
+## Required GitHub secrets
 
-- Fetches all historical `Microsoft.Graph` versions from PowerShell Gallery
-- Reads command metadata (`Cmdlets` / `Functions`)
-- Compares the longest command from the root package with the longest command from dependency packages
-- Builds a transition timeline when the longest command changes
-- Caches computed data in memory for 24 hours (daily refresh cadence) to minimize remote calls
+Configure these repository or `production` environment secrets before enabling publishing:
+
+- `CLOUDFLARE_API_TOKEN` — a least-privilege token allowed to deploy this Worker.
+- `CLOUDFLARE_ACCOUNT_ID` — the Cloudflare account that owns the Worker.
+
+The old Worker `REFRESH_TOKEN` secret is no longer used. `POST /api/refresh` now returns `410 Gone`; use **Actions → Publish data snapshot → Run workflow** to refresh immediately.
 
 ## Local development
 
 ```bash
 npm install
+npm test
 npm run dev
 ```
 
-Then open the local Worker URL shown by Wrangler.
-
-To use the protected refresh endpoint:
+`src/snapshot.js` is a small fixture for local development and pull-request builds. To create a real snapshot locally, run:
 
 ```bash
-export REFRESH_TOKEN=your-refresh-token
-```
-
-## Test
-
-```bash
+npm run collect
 npm test
+npm run dev
 ```
 
-## Deploy
+The collector replaces `src/snapshot.js` in the current workspace. Do not commit its generated output unless intentionally refreshing the development fixture.
+
+## Verification
 
 ```bash
-npm run deploy
+npm run check
 ```
 
-Set `REFRESH_TOKEN` as a Cloudflare Worker secret for production:
-
-```bash
-npx wrangler secret put REFRESH_TOKEN
-```
+This runs the deterministic unit/integration tests and validates the Worker deployment bundle without publishing it.
