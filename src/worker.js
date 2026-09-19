@@ -19,7 +19,7 @@ export function renderPage(data) {
   <title>Longest Microsoft Graph Cmdlet</title>
   <meta name="description" content="A small tribute to very long commands. Explore the longest Microsoft Graph PowerShell cmdlet, the all-time top ten, and the history behind them.">
   <meta property="og:title" content="Longest Microsoft Graph Cmdlet">
-  <meta property="og:description" content="A small tribute to very long commands. The current longest, the all-time top ten, and their history.">
+  <meta property="og:description" content="A small tribute to very long commands. The all-time longest, the top ten, and their history.">
   <meta name="theme-color" content="#111313">
   <style>
     :root { color-scheme:dark; --bg:#111313; --text:#eff1ed; --muted:#a3aaa4; --line:#343934; --accent:#c9f77b; }
@@ -64,11 +64,11 @@ export function renderPage(data) {
 <body>
   <main>
     <section class="hero" aria-labelledby="current-title">
-      <div class="hero-heading"><h1 class="eyebrow" id="current-title">The current longest cmdlet</h1>${current?.name ? `<span class="length"><strong>${escapeHtml(current.length)}</strong> characters</span>` : ''}</div>
+      <div class="hero-heading"><h1 class="eyebrow" id="current-title">The all-time longest cmdlet</h1>${current?.name ? `<span class="length"><strong>${escapeHtml(current.length)}</strong> characters</span>` : ''}</div>
       ${current?.name ? `<code class="winner">${escapeHtml(current.name)}</code><div class="metadata"><p><span class="label">Module</span><span class="value">${escapeHtml(current.packageId)}</span></p><p><span class="label">Longest since</span><span class="value">${escapeHtml(dateLabel(current.sincePublished))} · Graph ${escapeHtml(current.sinceVersion)}</span></p></div>` : '<p>No command data is available yet.</p>'}
     </section>
     <section aria-labelledby="top-title"><div class="section-heading"><h2 id="top-title">The all-time top 10</h2><p>Unique commands, ranked by length</p></div>${topRows ? `<table><thead><tr><th class="rank" scope="col">Rank</th><th scope="col">Command / module</th><th class="number" scope="col">Chars</th></tr></thead><tbody>${topRows}</tbody></table>` : '<p>No rankings available.</p>'}</section>
-    <section aria-labelledby="history-title"><div class="section-heading"><h2 id="history-title">A history of long commands</h2><p>The latest 10 changes to the lead</p></div>${historyRows ? `<ol class="history">${historyRows}</ol>` : '<p>No history available.</p>'}</section>
+    <section aria-labelledby="history-title"><div class="section-heading"><h2 id="history-title">A history of long commands</h2><p>The latest 10 all-time record changes</p></div>${historyRows ? `<ol class="history">${historyRows}</ol>` : '<p>No history available.</p>'}</section>
   </main>
   <footer><span>${escapeHtml(data.totalVersionsAnalyzed)} releases analyzed · Updated ${escapeHtml(dateLabel(data.generatedAt))}</span><span><a href="https://www.powershellgallery.com/packages/Microsoft.Graph">PowerShell Gallery</a> · <a href="/api/longest">JSON API</a></span></footer>
 </body>

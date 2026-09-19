@@ -19,6 +19,8 @@ describe('worker endpoints', () => {
     expect(response.headers.get('content-type')).toContain('text/html');
     const html = await response.text();
     expect(html).toContain(snapshot.current.name);
+    expect(html).toContain(`<code class="winner">${snapshot.topLongest[0].name}</code>`);
+    expect(html).toContain('The all-time longest cmdlet');
     expect(html).toContain('The all-time top 10');
     expect(html).not.toContain('<script');
     expect(html).not.toContain('Loading latest');
@@ -59,6 +61,12 @@ it('publishes internally consistent command lengths, dates, and distinct ranking
   expect(snapshot.current.length).toBe(snapshot.current.name.length);
   expect(snapshot.totalVersionsAnalyzed).toBe(new Set(snapshot.analyzedVersions).size);
   expect(snapshot.history[0].name).toBe(snapshot.current.name);
+  expect(snapshot.current.name).toBe(snapshot.topLongest[0].name);
+  expect(snapshot.current.length).toBe(snapshot.topLongest[0].length);
+  expect(snapshot.current.sinceVersion).toBe(snapshot.topLongest[0].versionFound);
+  for (let index = 1; index < snapshot.history.length; index += 1) {
+    expect(snapshot.history[index - 1].name.length).toBeGreaterThanOrEqual(snapshot.history[index].name.length);
+  }
   expect(new Set(snapshot.history.map((item) => item.version)).size).toBe(snapshot.history.length);
   expect(new Set(snapshot.topLongest.map((item) => item.name)).size).toBe(snapshot.topLongest.length);
   for (const item of snapshot.topLongest) {

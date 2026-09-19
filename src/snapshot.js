@@ -123,60 +123,25 @@ export default {
     "2.40.0"
   ],
   "current": {
-    "name": "Remove-MgIdentityAuthenticationEventFlowAsOnGraphAPretributeCollectionExternalUserSelfServiceSignUpAttributeIdentityUserFlowAttributeByRef",
-    "length": 138,
-    "packageId": "Microsoft.Graph.Identity.SignIns",
-    "sinceVersion": "2.22.0",
-    "sincePublished": "2024-08-13T07:12:33.677Z"
+    "name": "Invoke-MgExtendDeviceManagementDeviceConfigurationGroupAssignmentDeviceConfigurationMicrosoftGraphWindowUpdateForBusinessConfigurationFeatureUpdatePause",
+    "length": 152,
+    "packageId": "Microsoft.Graph.DeviceManagement.Actions",
+    "sinceVersion": "1.4.0",
+    "sincePublished": "2021-03-05T05:34:32.947Z"
   },
   "previous": {
-    "version": "2.0.0-preview1",
-    "publishedAt": "2022-12-14T05:28:18.947Z",
-    "name": "Invoke-MgDownloadDeviceManagementApplePushNotificationCertificateApplePushNotificationCertificateSigningRequest",
-    "packageId": "Microsoft.Graph.DeviceManagement.Functions",
-    "previousName": "Remove-MgDeviceManagementAdvancedThreatProtectionOnboardingStateSummaryAdvancedThreatProtectionOnboardingDeviceSettingState"
+    "version": "0.1.1",
+    "publishedAt": "2020-01-14T01:28:25.353Z",
+    "name": "Remove-MgCertificateBasedAuthConfigurationCertificateBasedAuthConfigurationCertificateBasedAuthConfiguration",
+    "packageId": "Microsoft.Graph.Identity.CertificateBasedAuthConfiguration",
+    "previousName": null
   },
   "history": [
-    {
-      "version": "2.22.0",
-      "publishedAt": "2024-08-13T07:12:33.677Z",
-      "name": "Remove-MgIdentityAuthenticationEventFlowAsOnGraphAPretributeCollectionExternalUserSelfServiceSignUpAttributeIdentityUserFlowAttributeByRef",
-      "packageId": "Microsoft.Graph.Identity.SignIns",
-      "previousName": "Invoke-MgDownloadDeviceManagementApplePushNotificationCertificateApplePushNotificationCertificateSigningRequest"
-    },
-    {
-      "version": "2.0.0-preview1",
-      "publishedAt": "2022-12-14T05:28:18.947Z",
-      "name": "Invoke-MgDownloadDeviceManagementApplePushNotificationCertificateApplePushNotificationCertificateSigningRequest",
-      "packageId": "Microsoft.Graph.DeviceManagement.Functions",
-      "previousName": "Remove-MgDeviceManagementAdvancedThreatProtectionOnboardingStateSummaryAdvancedThreatProtectionOnboardingDeviceSettingState"
-    },
-    {
-      "version": "1.10.0",
-      "publishedAt": "2022-06-22T17:03:31.603Z",
-      "name": "Remove-MgDeviceManagementAdvancedThreatProtectionOnboardingStateSummaryAdvancedThreatProtectionOnboardingDeviceSettingState",
-      "packageId": "Microsoft.Graph.DeviceManagement",
-      "previousName": "Invoke-MgExtendDeviceManagementDeviceConfigurationGroupAssignmentDeviceConfigurationMicrosoftGraphWindowUpdateForBusinessConfigurationFeatureUpdatePause"
-    },
     {
       "version": "1.4.0",
       "publishedAt": "2021-03-05T05:34:32.947Z",
       "name": "Invoke-MgExtendDeviceManagementDeviceConfigurationGroupAssignmentDeviceConfigurationMicrosoftGraphWindowUpdateForBusinessConfigurationFeatureUpdatePause",
       "packageId": "Microsoft.Graph.DeviceManagement.Actions",
-      "previousName": "Remove-MgEntitlementManagementAccessPackageAssignmentResourceRoleAccessPackageResourceScope"
-    },
-    {
-      "version": "1.0.0",
-      "publishedAt": "2020-09-24T16:56:10.877Z",
-      "name": "Remove-MgEntitlementManagementAccessPackageAssignmentResourceRoleAccessPackageResourceScope",
-      "packageId": "Microsoft.Graph.Identity.Governance",
-      "previousName": "Remove-MgFinancialCompanyCustomerPaymentJournalCustomerPaymentCustomerShipmentMethod"
-    },
-    {
-      "version": "0.9.0",
-      "publishedAt": "2020-08-13T23:07:33.450Z",
-      "name": "Remove-MgFinancialCompanyCustomerPaymentJournalCustomerPaymentCustomerShipmentMethod",
-      "packageId": "Microsoft.Graph.Financials",
       "previousName": "Remove-MgCertificateBasedAuthConfigurationCertificateBasedAuthConfigurationCertificateBasedAuthConfiguration"
     },
     {

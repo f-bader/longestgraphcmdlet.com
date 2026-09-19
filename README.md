@@ -1,6 +1,6 @@
 # longestgraphcmdlet.com
 
-Cloudflare Worker site that shows the longest Microsoft Graph PowerShell function/cmdlet and its recent history.
+Cloudflare Worker site that shows the longest Microsoft Graph PowerShell function/cmdlet of all time and its record history. The headline and top ten consider every analyzed release, including commands removed from later releases; history tracks changes to the all-time record.
 
 ## Architecture
 

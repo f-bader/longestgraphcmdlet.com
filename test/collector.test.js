@@ -235,6 +235,43 @@ function state(winners, generatedAt = '2024-03-10T00:00:00.000Z') {
 }
 
 describe('collector regressions', () => {
+  const record = 'Invoke-MgExtendDeviceManagementDeviceConfigurationGroupAssignmentDeviceConfigurationMicrosoftGraphWindowUpdateForBusinessConfigurationFeatureUpdatePause';
+  const laterWinner = 'Remove-MgIdentityAuthenticationEventFlowAsOnGraphAPretributeCollectionExternalUserSelfServiceSignUpAttributeIdentityUserFlowAttributeByRef';
+
+  it('keeps the all-time record when later releases have shorter winners', () => {
+    const result = buildResponse([
+      winner('1.0.0', 'Get-MgUser'),
+      winner('1.4.0', record),
+      winner('2.22.0', laterWinner),
+    ]);
+    expect(result.current).toMatchObject({ name: record, length: 152, sinceVersion: '1.4.0' });
+    expect(result.current.name).toBe(result.topLongest[0].name);
+    expect(result.history.map(item => item.version)).toEqual(['1.4.0', '1.0.0']);
+    expect(result.previous.name).toBe('Get-MgUser');
+  });
+
+  it.each([false, true])('rebuilds cached records on refresh, empty window: %s', async (empty) => {
+    const previous = state([winner('1.4.0', record), winner('2.22.0', laterWinner)]);
+    // Simulate state persisted by the old latest-release selection logic.
+    previous.current = { name: laterWinner, length: laterWinner.length };
+    previous.history = [];
+    const result = await collectSnapshot({
+      previousSnapshot: previous, recentDays: 7,
+      fetchImpl: async () => new Response(empty ? '<feed><title>Packages</title></feed>' : feed([entry({
+        id: 'Microsoft.Graph', version: '2.40.0', published: '2024-03-12T00:00:00Z', functions: laterWinner,
+      })])),
+    });
+    expect(result.current).toMatchObject({ name: record, sinceVersion: '1.4.0' });
+    expect(result.history[0].name).toBe(record);
+    expect(result.topLongest[0].name).toBe(record);
+  });
+
+  it('resolves equal-length records consistently with the ranking and preserves first appearance', () => {
+    const result = buildResponse([winner('1.0.0', 'Get-Zzz'), winner('2.0.0', 'Get-Aaa'), winner('3.0.0', 'Get-Aaa')]);
+    expect(result.current.name).toBe(result.topLongest[0].name);
+    expect(result.current.sinceVersion).toBe('2.0.0');
+  });
+
   it('normalizes typed XML dates and uses Created for unlisted packages', () => {
     const data = parseFeed(feed([
       '<entry><m:properties><d:Id>Microsoft.Graph.Users</d:Id><d:Version>1.0.0</d:Version><d:Published m:type="Edm.DateTime">1900-01-01T00:00:00</d:Published><d:Created m:type="Edm.DateTime">2024-01-01T03:00:00</d:Created></m:properties></entry>',
@@ -288,7 +325,7 @@ describe('collector regressions', () => {
   });
 
   it('retains complete state beyond the public ten-transition limit', () => {
-    const releases = Array.from({ length: 15 }, (_, index) => winner(`${index + 1}.0.0`, `Get-Command${index}`));
+    const releases = Array.from({ length: 15 }, (_, index) => winner(`${index + 1}.0.0`, `Get-Command${'X'.repeat(index)}`));
     const previous = state(releases);
     const merged = mergeIncrementalSnapshots(previous, state(releases.slice(0, 2)));
     expect(merged.winners).toHaveLength(15);

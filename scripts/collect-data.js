@@ -62,7 +62,7 @@ export function pickLongest(commands) {
   let best = null;
 
   for (const command of commands) {
-    if (!best || command.length > best.length || (command.length === best.length && command < best)) {
+    if (!best || command.length > best.length || (command.length === best.length && command.localeCompare(best) < 0)) {
       best = command;
     }
   }
@@ -486,7 +486,7 @@ export function selectDependencyMetadata(metadata, range, rootPublished, rootVer
 
 function selectWinner(current, candidateName, packageId) {
   if (!candidateName) return current;
-  if (!current || candidateName.length > current.name.length || (candidateName.length === current.name.length && candidateName < current.name)) {
+  if (!current || candidateName.length > current.name.length || (candidateName.length === current.name.length && candidateName.localeCompare(current.name) < 0)) {
     return { name: candidateName, packageId };
   }
   return current;
@@ -498,7 +498,9 @@ export function buildResponse(winnersByVersion, generatedAt = new Date().toISOSt
 
   for (const item of winnersByVersion) {
     if (!item.longestName) continue;
-    if (!last || last.name !== item.longestName || last.packageId !== item.packageId) {
+    // A shorter winner in a newer release cannot displace the all-time record.
+    if (!last || item.longestName.length > last.name.length
+      || (item.longestName.length === last.name.length && item.longestName.localeCompare(last.name) < 0)) {
       const transition = {
         version: item.version,
         publishedAt: item.published,
@@ -585,7 +587,7 @@ export async function collectSnapshot({
     .sort((left, right) => compareVersions(left.version, right.version));
   onProgress(`Found ${roots.length} root releases${since ? ' in the catch-up window' : ' for full collection'}.`);
   if (!roots.length) {
-    if (previousSnapshot) return { ...previousSnapshot, generatedAt: effectiveGeneratedAt };
+    if (previousSnapshot) return mergeIncrementalSnapshots(previousSnapshot, { winners: [], generatedAt: effectiveGeneratedAt });
     throw new PowerShellGalleryError('No Microsoft.Graph package versions were returned.', { code: 'ROOT_VERSIONS_EMPTY' });
   }
 
