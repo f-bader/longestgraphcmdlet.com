@@ -1,0 +1,27 @@
+{
+  "name": "longestgraphcmdlet.com",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest run",
+    "collect": "node scripts/collect-data.js",
+    "check": "npm test && npx wrangler deploy --dry-run",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/f-bader/longestgraphcmdlet.com.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "fast-xml-parser": "^5.11.1",
+    "vitest": "^5.0.0",
+    "wrangler": "^4.131.0"
+  },
+  "type": "module"
+}
